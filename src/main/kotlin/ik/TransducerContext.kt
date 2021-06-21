@@ -71,6 +71,22 @@ class TransducerContext<Recv> {
                 _acc }}
     }
 
+    inline fun <T_out, T_in> flatMappingTrandused(
+        crossinline f: (T_out) -> Iterable<T_out>,
+        crossinline chain2: (T_out) -> TransducerContext<Recv>.() -> Transducer<Recv, T_in, T_out>
+    ): Transducer<Recv,T_in,T_out> {
+        return { step: Reducer<Recv,T_in> ->
+          { acc: Recv, arg: T_out ->
+            var _acc = acc
+
+            for (e in f(arg)) {
+                _acc = chain2(arg).invoke(this).invoke(step).invoke(_acc, e)
+                if (exit) break
+            }
+
+            _acc }}
+}
+
     inline fun <T_out, V> zipping(list: Iterable<V>): Transducer<Recv, Pair<T_out, V>, T_out> {
         val iter = list.iterator()
 
@@ -89,6 +105,36 @@ class TransducerContext<Recv> {
             { acc: Recv, arg: T_out ->
                 if (iter.hasNext())
                     step(acc, transform(arg, iter.next()))
+                else
+                    acc.also { exit = true } }}
+    }
+
+    inline fun <T_out, V, V2, R> zippingFused(
+        extendedTransducerContext2: ExtendedTransducerContext2<Recv, V2, V>,
+        crossinline transform: (T_out, V) -> R
+    ): Transducer<Recv, R, T_out> {
+        val iter = extendedTransducerContext2.list.iterator()
+        val innerChain: Transducer<Recv, V, V2> = extendedTransducerContext2.operatorChain(this)
+
+        return { step: Reducer<Recv, R> ->
+            { acc: Recv, arg: T_out ->
+                if (iter.hasNext())
+                    (innerChain + mapping { transform(arg, it)})(step).invoke(acc, iter.next())
+                else
+                    acc.also { exit = true } }}
+    }
+
+    inline fun <T_out, V, V2, R> zippingTransduced(
+        list: Iterable<V2>,
+        crossinline chain2: TransducerContext<Recv>.() -> Transducer<Recv, V, V2>,
+        crossinline transform: (T_out, V) -> R
+    ): Transducer<Recv, R, T_out> {
+        val iter = list.iterator()
+
+        return { step: Reducer<Recv, R> ->
+            { acc: Recv, arg: T_out ->
+                if (iter.hasNext())
+                    (+this.chain2() +mapping { transform(arg, it) }).invoke(step).invoke(acc, iter.next())
                 else
                     acc.also { exit = true } }}
     }
