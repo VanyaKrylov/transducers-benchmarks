@@ -175,6 +175,32 @@ class TestsContainer {
         return zipFlatMapFlatMapFused
     }
 
+    fun zipFlatMapFlatMapFusedFused(v: List<Int>, vLo: List<Int>): Int {
+        val zipFlatMapFlatMapFused = vLo
+            .transduce5NI(0) {((
+            +flatMappingFused { d: Int -> v.fuser { +mapping<Int, Int> { d - it } } }
+            +zippingFused(v.fuser2 { +flatMappingFused { d: Int -> vLo.fuser { +mapping<Int, Int> { it * d } } } }) {
+                    a: Int, b: Int -> a + b
+            }
+            +taking(20000000))
+            { a, b -> a + b })}
+
+        return zipFlatMapFlatMapFused
+    }
+
+    fun zipFlatMapFlatMapTransduced(v: List<Int>, vLo: List<Int>): Int {
+        val zipFlatMapFlatMapFused = vLo
+            .transduce5NI(0) {((
+            +flatMappingTrandused({ v }) { d: Int -> { +mapping<Int, Int> { d - it } } }
+            +zippingTransduced(v, { +flatMappingTrandused({ vLo }) { d: Int ->  { +mapping<Int, Int> { it * d } } } }) {
+                    a: Int, b: Int -> a + b
+            }
+            +taking(20000000))
+            { a, b -> a + b })}
+
+        return zipFlatMapFlatMapFused
+    }
+
      //NOT INLINED
 
     fun sumNI(list: List<Int>): Int {
@@ -217,6 +243,15 @@ class TestsContainer {
         val result = vHi
             .transduce5NI(0){((
             +flatMappingFused { d: Int -> vLo.fuser { mapping { it * d } } })
+            { a, b -> a + b })}
+
+        return result
+    }
+
+    fun cartTrandusedNI(vHi: List<Int>, vLo: List<Int>): Int {
+        val result = vHi
+            .transduce5(0){((
+            +flatMappingTrandused({ vLo }) { d: Int ->  { mapping { it * d } } })
             { a, b -> a + b })}
 
         return result
@@ -272,6 +307,16 @@ class TestsContainer {
         return result
     }
 
+    fun flatMapTakeTrandusedNI(vHi: List<Int>, vLo: List<Int>): Int {
+        val result = vHi
+            .transduce5(0) {((
+            +flatMappingTrandused({ vLo }) { d: Int -> { mapping { it * d } } }
+            +taking(20000000))
+            { a, b -> a + b } )}
+
+        return result
+    }
+
     fun dotProductNI(list: List<Int>): Int {
         val result = list
             .transduce5NI(0) {((
@@ -301,6 +346,16 @@ class TestsContainer {
         return result
     }
 
+    fun flatMapAfterZipTrandusedNI(vFaZ: List<Int>): Long {
+        val result = vFaZ
+            .transduce5(0L) {((
+            +zipping(vFaZ) { a: Int, b -> a + b }
+            +flatMappingTrandused({ vFaZ }) { d: Int -> { mapping { it + d } } })
+            { a, b -> a + b } )}
+
+        return result
+    }
+
     fun zipAfterFlatMapNI(vZaF: List<Int>): Long {
         val result = vZaF
             .transduce5NI(0L) {((
@@ -315,6 +370,16 @@ class TestsContainer {
         val result = vZaF
             .transduce5NI(0L) {((
             +flatMappingFused { d: Int -> vZaF.fuser { +mapping<Int, Int> { it + d } } }
+            +zipping(vZaF) { a: Int, b -> a + b })
+            { a, b -> a + b })}
+
+        return result
+    }
+
+    fun zipAfterFlatMapTrandusedNI(vZaF: List<Int>): Long {
+        val result = vZaF
+            .transduce5(0L) {((
+            +flatMappingTrandused({ vZaF }) { d: Int -> { +mapping<Int, Int> { it + d } } }
             +zipping(vZaF) { a: Int, b -> a + b })
             { a, b -> a + b })}
 
@@ -345,6 +410,19 @@ class TestsContainer {
             { a, b -> a + b })}
 
         return result
+    }
+
+    fun zipFlatMapFlatMapFusedFusedNI(v: List<Int>, vLo: List<Int>): Int {
+        val zipFlatMapFlatMapFused = vLo
+            .transduce5NI(0) {((
+            +flatMappingFused { d: Int -> v.fuser { +mapping<Int, Int> { d - it } } }
+            +zippingFused(v.fuser2 { +flatMappingFused { d: Int -> vLo.fuser { +mapping<Int, Int> { it * d } } } }) {
+                    a: Int, b: Int -> a + b
+            }
+            +taking(20000000))
+            { a, b -> a + b })}
+
+        return zipFlatMapFlatMapFused
     }
 
     //SEQUENCES
@@ -501,6 +579,8 @@ class TestsContainer {
 
         return result
     }
+
+    //@formatter:on
 
 /*    fun inlined(list: MutableList<String>): List<Int> {
          val res = list
@@ -695,7 +775,15 @@ fun main() {
         assert(zipFlatMapFlatMap(v, vLo) == zipFlatMapFlatMap)
         assert(zipFlatMapFlatMapFused(v, vLo) == zipFlatMapFlatMap)
 
-        //Not inlined
+        assert(zipFlatMapFlatMapFusedFused(v, vLo) == zipFlatMapFlatMap)
+        assert(zipFlatMapFlatMapTransduced(v, vLo) == zipFlatMapFlatMap)
+
+        assert(cartTrandusedNI(vHi, vLo) == cart)
+        assert(flatMapAfterZipTrandusedNI(vFaZ) == flatMapAfterZip)
+        assert(flatMapTakeTrandusedNI(vHi, vLo) == flatMapTake)
+        assert(zipAfterFlatMapTrandusedNI(vZaF) == zipAfterFlatMap)
+
+      /*  //Not inlined
         assert(sumNI(v) == sum)
         assert(sumOfSquaresNI(v) == sumOfSquares)
         assert(sumOfSquaresEvenNI(v) == sumOfSquaresEven)
@@ -728,6 +816,6 @@ fun main() {
         assert(flatMapAfterZipSeqMixed(vFaZ) == flatMapAfterZip)
         assert(zipAfterFlatMapSeq(vZaF) == zipAfterFlatMap)
         assert(zipAfterFlatMapSeqMixed(vZaF) == zipAfterFlatMap)
-        assert(zipFlatMapFlatMapSeq(v, vLo) == zipFlatMapFlatMap)
+        assert(zipFlatMapFlatMapSeq(v, vLo) == zipFlatMapFlatMap)*/
     }
 }
