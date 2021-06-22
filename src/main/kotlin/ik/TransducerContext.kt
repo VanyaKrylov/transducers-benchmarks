@@ -36,16 +36,6 @@ class TransducerContext<Recv> {
                 }}}
     }
 
-    inline fun <T_in,T_out> mapFlatting(crossinline f: (T_out) -> T_in): Transducer<Recv,T_in,Iterable<T_out>> {
-        return { step: Reducer<Recv,T_in> ->
-            { acc: Recv, arg: Iterable<T_out> ->
-                for (e in arg) {
-                    if (exit) break
-                    mapping(f)(step)(acc,e)
-                }
-                acc }}
-    }
-
     inline fun <T_out,T_in> flatMapping(crossinline f: (T_out) -> Iterable<T_in>): Transducer<Recv,T_in,T_out> {
         return { step: Reducer<Recv,T_in> ->
             { acc: Recv, arg: T_out ->
@@ -71,21 +61,21 @@ class TransducerContext<Recv> {
                 _acc }}
     }
 
-    inline fun <T_out, T_in> flatMappingTrandused(
+    inline fun <T_out, T_in> flatMapping(
         crossinline f: (T_out) -> Iterable<T_out>,
         crossinline chain2: (T_out) -> TransducerContext<Recv>.() -> Transducer<Recv, T_in, T_out>
     ): Transducer<Recv,T_in,T_out> {
         return { step: Reducer<Recv,T_in> ->
-          { acc: Recv, arg: T_out ->
-            var _acc = acc
+            { acc: Recv, arg: T_out ->
+                var _acc = acc
 
-            for (e in f(arg)) {
-                _acc = chain2(arg).invoke(this).invoke(step).invoke(_acc, e)
-                if (exit) break
-            }
+                for (e in f(arg)) {
+                    _acc = chain2(arg).invoke(this).invoke(step).invoke(_acc, e)
+                    if (exit) break
+                }
 
-            _acc }}
-}
+                _acc }}
+    }
 
     inline fun <T_out, V> zipping(list: Iterable<V>): Transducer<Recv, Pair<T_out, V>, T_out> {
         val iter = list.iterator()
@@ -109,7 +99,7 @@ class TransducerContext<Recv> {
                     acc.also { exit = true } }}
     }
 
-    inline fun <T_out, V, V2, R> zippingFused(
+    inline fun <T_out, V, V2, R> zipping(
         extendedTransducerContext2: ExtendedTransducerContext2<Recv, V2, V>,
         crossinline transform: (T_out, V) -> R
     ): Transducer<Recv, R, T_out> {
@@ -124,24 +114,51 @@ class TransducerContext<Recv> {
                     acc.also { exit = true } }}
     }
 
-    inline fun <T_out, V, V2, R> zippingTransduced(
+    @Suppress("RedundantLambdaOrAnonymousFunction")
+    inline fun <T_out, V, V2, R> zipping(
+        extendedTransducerContext: ExtendedTransducerContext<Recv, V2, V>,
+        crossinline transform: (T_out, V) -> R
+    ): Transducer<Recv, R, T_out> {
+        val iter = extendedTransducerContext.list.iterator()
+
+        return { step: Reducer<Recv, R> ->
+            { acc: Recv, arg: T_out ->
+                if (iter.hasNext())
+                    ({ r: Reducer<Recv, R> ->
+                        extendedTransducerContext.transducer((mapping<V, R> { transform(arg, it) }).invoke(r)  )})
+                        .invoke(step)
+                        .invoke(acc, iter.next())
+                else
+                    acc.also { exit = true } }}
+    }
+
+    @Suppress("RedundantLambdaOrAnonymousFunction")
+    inline fun <T_out, V, V2, R> zipping(
         list: Iterable<V2>,
         crossinline chain2: TransducerContext<Recv>.() -> Transducer<Recv, V, V2>,
         crossinline transform: (T_out, V) -> R
     ): Transducer<Recv, R, T_out> {
         val iter = list.iterator()
+        val chain = this.chain2()
 
         return { step: Reducer<Recv, R> ->
             { acc: Recv, arg: T_out ->
                 if (iter.hasNext())
-                    (+this.chain2() +mapping { transform(arg, it) }).invoke(step).invoke(acc, iter.next())
+                    ({ r: Reducer<Recv, R> -> chain.invoke((mapping<V, R> { transform(arg, it) } ).invoke(r)) })
+                        .invoke(step)
+                        .invoke(acc, iter.next())
                 else
                     acc.also { exit = true } }}
     }
 
-    inline infix operator fun <T_in,T_out,T_in2> Transducer<Recv,T_in,T_out>.plus(crossinline t: Transducer<Recv,T_in2,T_in>): Transducer<Recv,T_in2,T_out> =
+    inline infix operator fun <T_in,T_out,T_in2> Transducer<Recv,T_in,T_out>.plus(
+        crossinline t: Transducer<Recv,T_in2,T_in>
+    ): Transducer<Recv,T_in2,T_out> =
         { arg: Reducer<Recv,T_in2> -> this.invoke(t.invoke(arg)) }
-    inline infix operator fun <T_in,T_out,T_in2> Transducer<Recv,T_in,T_out>.minus(crossinline t: Transducer<Recv,T_in2,T_in>): Transducer<Recv,T_in2,T_out> =
+
+    inline infix operator fun <T_in,T_out,T_in2> Transducer<Recv,T_in,T_out>.minus(
+        crossinline t: Transducer<Recv,T_in2,T_in>
+    ): Transducer<Recv,T_in2,T_out> =
         { arg: Reducer<Recv,T_in2> -> this.invoke(t.invoke(arg)) }
 
     inline infix operator fun <T_in,T_out> Transducer<Recv,T_in,T_out>.plus(noinline r: Reducer<Recv,T_in>) = this.invoke(r)
@@ -155,12 +172,23 @@ class ExtendedTransducerContext<Recv, In, Out>(
     var transducer: Transducer<Recv, Out, In>
 )
 
+class ExtendedTransducerContext2<Recv, In, Out>(
+    var list: Iterable<In>,
+    var operatorChain: TransducerContext<Recv>.() -> Transducer<Recv, Out, In>
+)
+
 inline fun <Recv, In, Out> List<In>.fuser(
     operatorChain: TransducerContext<Recv>.() -> Transducer<Recv, Out, In>
 ): ExtendedTransducerContext<Recv, In, Out> {
     val ctx = TransducerContext<Recv>()
 
     return ExtendedTransducerContext(this, ctx, ctx.operatorChain())
+}
+
+inline fun <Recv, In, Out> List<In>.fuser2(
+    noinline operatorChain: TransducerContext<Recv>.() -> Transducer<Recv, Out, In>
+): ExtendedTransducerContext2<Recv, In, Out> {
+    return ExtendedTransducerContext2(this, operatorChain)
 }
 
 inline fun <Out, In> _transduce(
@@ -175,7 +203,7 @@ inline fun <Out, In> _transduce(
     return res
 }
 
-@SuperInline inline fun <Out,In> List<Out>.transduce4(
+@SuperInline inline fun <Out,In> List<Out>.transduce(
     operatorChain: TransducerContext<MutableList<In>>.() -> Transducer<MutableList<In>,In,Out>
 ): List<In> {
     val ctx = TransducerContext<MutableList<In>>()
@@ -184,7 +212,7 @@ inline fun <Out, In> _transduce(
     return res
 }
 
-inline fun <Out,In> List<Out>.transduce4NI(
+inline fun <Out,In> List<Out>.transduceNI(
     operatorChain: TransducerContext<MutableList<In>>.() -> Transducer<MutableList<In>,In,Out>
 ): List<In> {
     val ctx = TransducerContext<MutableList<In>>()
@@ -193,7 +221,7 @@ inline fun <Out,In> List<Out>.transduce4NI(
     return res
 }
 
-@SuperInline inline fun <Out, In> List<Out>.transduce5(
+@SuperInline inline fun <Out, In> List<Out>.transduce(
     initial: In,
     operatorChain: TransducerContext<In>.() -> Reducer<In, Out>
 ): In {
@@ -203,7 +231,7 @@ inline fun <Out,In> List<Out>.transduce4NI(
     return res
 }
 
-inline fun <Out, In> List<Out>.transduce5NI(
+inline fun <Out, In> List<Out>.transduceNI(
     initial: In,
     operatorChain: TransducerContext<In>.() -> Reducer<In, Out>
 ): In {
@@ -212,8 +240,6 @@ inline fun <Out, In> List<Out>.transduce5NI(
 
     return res
 }
-
-inline fun <Recv> toList(acc: MutableList<Recv>, v: Recv) = acc.apply { this.add(v) }
 
 inline fun <Out, In> List<Out>.lazyTransduce(
     operatorChain: TransducerContext<MutableList<In>>.() -> Transducer<MutableList<In>, In, Out>
@@ -278,7 +304,6 @@ class LazyIterable<In, Out>(
     }
 
 }
-
 
 inline fun <T> conj(acc: MutableList<T>, el: T): MutableList<T> =
     acc.apply { this.add(el) }
